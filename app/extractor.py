@@ -22,7 +22,7 @@ async def extract_page(
     soup = BeautifulSoup(response.text, "html.parser")
     
     # Extract the page's HTML title, if available
-    title = soup.title.get_text(strip=True) if soup else None
+    title = soup.title.get_text(strip=True) if soup.title else None
     
     # Extract its meta description, if one exists
     meta = soup.select_one('meta[name="description"]')
