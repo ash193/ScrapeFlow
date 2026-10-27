@@ -27,9 +27,11 @@ pydantic==2.14.1
 pydantic_core==2.50.1
 Pygments==2.21.0
 pytest==9.1.1
+pytest-asyncio==1.4.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.4
 redis==6.4.0
+respx==0.23.1
 six==1.17.0
 soupsieve==3.0.3
 SQLAlchemy==2.1.5

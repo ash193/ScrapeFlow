@@ -1,0 +1,65 @@
+name: ScrapeFlow CI
+
+# Run automated tests when code is pushed or a PR is opened.
+on:
+  push:
+  pull_request:
+
+# The workflow only needs permission to read repository code.
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    # GitHub creates a fresh Linux environment.
+    runs-on: ubuntu-latest
+
+    # Environment variables available to the test job.
+    env:
+      DATABASE_URL: postgresql+psycopg://scrapeflow:ci_test_password@localhost:5432/scrapeflow_test
+      TEST_DATABASE_URL: postgresql+psycopg://scrapeflow:ci_test_password@localhost:5432/scrapeflow_test
+      CELERY_BROKER_URL: redis://localhost:6379/0
+      CELERY_RESULT_BACKEND: redis://localhost:6379/1
+
+    services:
+      # Start PostgreSQL in a temporary Docker container.
+      postgres:
+        image: postgres:17
+
+        env:
+          POSTGRES_USER: scrapeflow
+          POSTGRES_PASSWORD: ci_test_password
+          POSTGRES_DB: scrapeflow_test
+
+        # Make PostgreSQL accessible to Python tests.
+        ports:
+          - 5432:5432
+
+        # Check PostgreSQL readiness before starting tests.
+        options: >-
+          --health-cmd "pg_isready -U scrapeflow -d scrapeflow_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      # Download the repository into the GitHub runner.
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      # Install the same Python minor version used locally.
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      # Install all dependencies needed by the application/tests.
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      # Execute unit tests and PostgreSQL integration tests.
+      - name: Run automated tests
+        run: python -m pytest -v
