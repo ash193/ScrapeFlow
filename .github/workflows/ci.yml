@@ -63,3 +63,27 @@ jobs:
       # Execute unit tests and PostgreSQL integration tests.
       - name: Run automated tests
         run: python -m pytest -v
+
+  docker-build:
+    name: Verify Docker image
+    runs-on: ubuntu-latest
+
+    steps:
+      # Download the ScrapeFlow source code.
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      # Configure Docker's modern image builder.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Build our Python backend image without publishing it.
+      - name: Build ScrapeFlow image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: scrapeflow:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
