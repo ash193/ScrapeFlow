@@ -23,6 +23,20 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+    # Check whether FastAPI is responding to requests.
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   # Celery processes scraping jobs in the background.
   worker:
@@ -40,6 +54,21 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+    # Verify that the Celery worker responds through Redis.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          celery -A app.celery_app:celery_app
+          inspect ping --timeout=5 -d "celery@$$HOSTNAME"
+          | grep -q pong
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   # Redis transports tasks between FastAPI and Celery.
   redis:
@@ -68,6 +97,29 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+  # Apply database migrations before starting the API and worker.
+  migrate:
+    build: .
+    image: scrapeflow-api
+
+    # Apply all outstanding Alembic migrations.
+    command:
+      - python
+      - -m
+      - alembic
+      - upgrade
+      - head
+
+    # Reuse the application's PostgreSQL connection.
+    environment: *app_environment
+
+    # PostgreSQL must be healthy before migration starts.
+    depends_on:
+      db:
+        condition: service_healthy
+
+    # Only run when Docker Compose starts the service.
+    restart: "no"
 
 # Named volumes preserve data after containers stop.
 volumes:

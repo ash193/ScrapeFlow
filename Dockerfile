@@ -21,6 +21,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the application source into the container.
 COPY . .
 
+# Create an unprivileged Linux user for the application.
+RUN groupadd --system appgroup \
+    && useradd --system --gid appgroup --create-home appuser
+
+# Run the application as this user instead of root.
+USER appuser
+
 # Document the port used by FastAPI.
 EXPOSE 8000
 

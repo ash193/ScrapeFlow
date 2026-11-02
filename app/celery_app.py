@@ -2,6 +2,10 @@ import os
 from celery import Celery
 from dotenv import load_dotenv
 
+import logging
+from celery.signals import setup_logging
+from app.logging_config import configure_logging
+
 # load env variables from .env for local development
 # Docker Compose provides these variables directly
 load_dotenv()
@@ -39,3 +43,18 @@ celery_app.conf.update(
     # allow worker processes to report that tasks started
     task_track_started=True,
 )
+
+@setup_logging.connect
+def initialize_celery_logging(**kwargs):
+    """
+    Configure logging when Celery starts its logging system.
+    This applies our shared logging format instead of Celery's default formatting.
+    """
+    
+    configure_logging()
+    
+    logger = logging.getLogger(__name__)
+    logger.info("ScrapeFlow Celery logging initialized")
+    
+    
+    

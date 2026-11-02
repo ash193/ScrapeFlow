@@ -21,6 +21,15 @@ from app.database import SessionLocal
 from app.db_models import Job, ScrapedPage
 from app.persistent_tasks import persistent_batch_task
 
+import logging
+from app.logging_config import configure_logging
+
+# set up app wide logging
+configure_logging()
+
+# create a logger specifically for this module
+logger = logging.getLogger(__name__)
+
 
 # create the fastapi app
 # similar to const app = express() in node.js
@@ -28,6 +37,8 @@ app = FastAPI(
     title="ScrapeFlow API",
     version="0.1.0"
 )
+
+logger.info("ScrapeFlow FastAPI application initialized")
 
 ALLOWED_HOSTS = {"books.toscrape.com"}
 
