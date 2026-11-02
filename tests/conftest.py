@@ -5,6 +5,8 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.engine import make_url
 from app.database import Base
+from fastapi.testclient import TestClient
+import app.main as main_module
 
 # import the SQLAlchemy models so Base knows which
 # PostgreSQL tables need to be created
@@ -79,3 +81,17 @@ def db_session(test_engine):
     session.close()
     transaction.rollback()
     connection.close()
+
+@pytest.fixture
+def client():
+    """
+    Create a FastAPI test client
+    TestClient allows us to send simulated HTTP requests
+    without starting a real Uvicorn server
+    """
+    # get the actual FastAPI instance from main.py 
+    fastapi_app = main_module.app
+    
+    with TestClient(fastapi_app) as test_client:
+        yield test_client
+    

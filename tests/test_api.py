@@ -53,5 +53,25 @@ def test_submits_approved_job(mock_delay):
         "https://books.toscrape.com/",
         {"titles": "h3 a"}
     )
+
+def test_rejects_unapproved_host(client):
+    """
+    Confirm that FastAPI rejects URLs outside
+    the configured hostname allowlist
+    """
+    
+    response = client.post(
+        "/jobs/persisted/batch",
+        json={
+            "urls": ["https://example.com/"],
+            "selectors": {
+                "title": "title"
+            }
+        }
+    )
+    
+    # the api should reject the request before
+    # creating a scraping job
+    assert response.status_code == 400
     
     

@@ -1,6 +1,7 @@
 import asyncio
 from app.models import BatchExtractionRequest
 from app.tasks import extract_batch_task
+from app.config import ALLOWED_HOSTS
 
 import httpx
 from fastapi import FastAPI, HTTPException
@@ -39,8 +40,6 @@ app = FastAPI(
 )
 
 logger.info("ScrapeFlow FastAPI application initialized")
-
-ALLOWED_HOSTS = {"books.toscrape.com"}
 
 @app.get("/health")
 async def health_check():

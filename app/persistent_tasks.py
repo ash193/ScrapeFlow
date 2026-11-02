@@ -9,11 +9,13 @@ from app.celery_app import celery_app
 from app.database import SessionLocal
 from app.db_models import Job, ScrapedPage
 from app.extractor import extract_page
+from app.config import ALLOWED_HOSTS
 
 from app.retry import extract_with_retry
 from sqlalchemy.dialects.postgresql import insert
 
-ALLOWED_HOSTS = {"books.toscrape.com"}
+import logging
+logger = logging.getLogger(__name__)
 
 async def process_batch(
     job_id: uuid.UUID,
@@ -144,7 +146,12 @@ def persistent_batch_task(
         
         # record the current PostgreSQL timestamp
         job.heartbeat_at = func.now()
-        
+    
+    logger.info(
+        "Persistent scraping job started: job_id=%s total_urls=%s",
+        job_id,
+        len(urls)
+    )
         
     try:
         # process the batch and persis results incrementally
@@ -192,6 +199,15 @@ def persistent_batch_task(
             # record the final worker activity timestamp
             job.heartbeat_at = func.now()
             final_status = job.status
+        
+        logger.info(
+            "Persistent scraping job finished: job_id=%s status=%s completed=%s failed=%s remaining=%s",
+            job_id,
+            final_status,
+            completed,
+            failed,
+            remaining,
+        )
             
         # celery also receives a small result summary
         # postgresql holds the full extracted records
@@ -204,6 +220,13 @@ def persistent_batch_task(
         }
     
     except Exception:
+        
+        # log the failure and include the Python traceback
+        logger.exception(
+            "Persistent scraping job failed unexpectedly: job_id=%s",
+            job_id
+        )
+        
         # if an unexpected error occurs, try to mark the
         # job as failed before allowing Celery to report it
         with SessionLocal.begin() as session:
