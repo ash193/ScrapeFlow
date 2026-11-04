@@ -1,7 +1,6 @@
 import asyncio
 from app.models import BatchExtractionRequest
 from app.tasks import extract_batch_task
-from app.config import ALLOWED_HOSTS
 
 import httpx
 from fastapi import FastAPI, HTTPException
@@ -13,6 +12,7 @@ from celery.result import AsyncResult
 from fastapi import status
 from app.celery_app import celery_app
 from app.tasks import extract_task
+from app.url_validator import is_allowed_url
 
 import uuid
 from sqlalchemy import select
@@ -48,9 +48,8 @@ async def health_check():
 
 @app.post("/extract", response_model=ExtractionResponse)
 async def extract(request: ExtractionRequest):
-    # httpURL provides a parsed, validated URL object
-    # restrict requests to our practice website for now
-    if request.url.host not in ALLOWED_HOSTS:
+    # validate the complete URL, not just its hostname
+    if not is_allowed_url(str(request.url)):
         raise HTTPException(
             status_code=400,
             detail="This URL is not an approved scraping target"
@@ -92,10 +91,10 @@ async def extract_batch(request: BatchExtractionRequest):
     # verify that every submitted url is an approved target
     # we validate the entire batch before sending http requests
     for url in request.urls:
-        if url.host not in ALLOWED_HOSTS:
+        if not is_allowed_url(str(url)):
             raise HTTPException(
                 status_code=400,
-                detail=f"URL host is not approved: {url.host}"
+                detail=f"URL host is not approved: {url}"
             )
 
     # prevent too many simultaneous requests
@@ -160,7 +159,7 @@ async def extract_batch(request: BatchExtractionRequest):
 @app.post("/jobs", status_code=status.HTTP_202_ACCEPTED)
 async def submit_job(request: ExtractionRequest):
     # validate the destination before adding work to the queue
-    if request.url.host not in ALLOWED_HOSTS:
+    if not is_allowed_url(str(request.url)):
         raise HTTPException(
             status_code=400,
             detail="Url is not an approved scraping target"
@@ -210,10 +209,7 @@ async def get_job(job_id: str):
 async def submit_batch_job(request: BatchExtractionRequest):
     # validate all urls before submitting the batch
     for url in request.urls:
-        if (
-            url.scheme != "https"
-            or url.host not in ALLOWED_HOSTS
-        ):
+        if not is_allowed_url(str(url)):
             raise HTTPException(
                 status_code=400,
                 detail=f"URL is not approved: {url}"
@@ -243,10 +239,7 @@ async def submit_batch_job(request: BatchExtractionRequest):
 async def submit_persistent_batch(request: BatchExtractionRequest):
     # validate every url before saving or queuing the job
     for url in request.urls:
-        if (
-            url.scheme != "https"
-            or url.host not in ALLOWED_HOSTS
-        ):
+        if not is_allowed_url(str(url)):
             raise HTTPException(
                 status_code=400,
                 detail=f"URL is not approved: {url}"

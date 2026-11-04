@@ -3,25 +3,17 @@ from app.celery_app import celery_app
 from app.extractor import extract_page
 import httpx
 from soupsieve.util import SelectorSyntaxError
-
-ALLOWED_HOSTS = {"books.toscrape.com"}
+from app.url_validator import is_allowed_url
 
 @celery_app.task(name="scraperflow.extract")
 def extract_task(url: str, selectors: dict[str,str]):
-    # celery's standard task function is synchronous
-    # asyncio.run() executes our existing async extractor
-    # using an event loop inside the worker process
-    
-    from urllib.parse import urlsplit
-    
-    parsed = urlsplit(url)
-    
-    # restrict both the protocol and destination hostname
-    if parsed.scheme != "https" or parsed.hostname not in ALLOWED_HOSTS:
+    # revalidate the URL inside the Celery worker
+    # tasks can be submitted independently of FastAPI
+    if not is_allowed_url(url):
         raise ValueError("Url is not an approved scraping target")
     
-    # run the async scraper and return its result
-    # celery stores the returned dictionary in its result backend
+    # celery tasks are synchronous, but our extractor is async
+    # asyncio.run() creates an event loop to execute it
     return asyncio.run(
         extract_page(url, selectors)
     )
@@ -40,15 +32,8 @@ def extract_batch_task(
         semaphore = asyncio.Semaphore(5)
         
         async def process_url(url: str):
-            from urllib.parse import urlsplit
-            
-            # validate the dest inside the worker too
-            parsed = urlsplit(url)
-            
-            if (
-                parsed.scheme != "https"
-                or parsed.hostname not in ALLOWED_HOSTS
-            ):
+            # revalidate each URL before making a network request
+            if not is_allowed_url(url):
                 return {
                     "url": url,
                     "status": "failed",
@@ -68,7 +53,8 @@ def extract_batch_task(
                 except (
                     httpx.RequestError,
                     httpx.HTTPStatusError,
-                    SelectorSyntaxError
+                    SelectorSyntaxError,
+                    ValueError
                 ) as error:
                     return {
                         "url": url,

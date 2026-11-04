@@ -9,10 +9,10 @@ from app.celery_app import celery_app
 from app.database import SessionLocal
 from app.db_models import Job, ScrapedPage
 from app.extractor import extract_page
-from app.config import ALLOWED_HOSTS
 
 from app.retry import extract_with_retry
 from sqlalchemy.dialects.postgresql import insert
+from app.url_validator import is_allowed_url
 
 import logging
 logger = logging.getLogger(__name__)
@@ -28,13 +28,9 @@ async def process_batch(
     async def process_url(url: str):
         from urllib.parse import urlsplit
         
-        # recheck the dest inside the worker
-        parsed = urlsplit(url)
-        
-        if (
-            parsed.scheme != "https"
-            or parsed.hostname not in ALLOWED_HOSTS
-        ): 
+        # validate the url again inside the worker
+        # a celery task should never rely solely on API validation
+        if not is_allowed_url(url): 
             return {
                 "url": url,
                 "status": "failed",
@@ -58,7 +54,8 @@ async def process_batch(
             except (
                 httpx.RequestError,
                 httpx.HTTPStatusError,
-                SelectorSyntaxError
+                SelectorSyntaxError,
+                ValueError
             ) as error:
                 return {
                     "url": url,

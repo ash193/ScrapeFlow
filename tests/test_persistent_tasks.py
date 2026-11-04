@@ -263,6 +263,87 @@ def test_persistent_job_partial_completion(
     "app.persistent_tasks.extract_with_retry",
     new_callable=AsyncMock
 )
+def test_persistent_job_handles_dns_failure(
+    mock_extract,
+    persistent_db
+):
+    """
+    Verify that a DNS validation failure for one URL
+    does not prevent other URLs from being persisted
+    """
+    # create a pending job with two URLs
+    job = Job(status="pending", total_urls=2)
+    persistent_db.add(job)
+    persistent_db.flush()
+    
+    job_id = job.id
+    
+    # simulate one successful extraction and one DNS failure
+    async def fake_extract(url, selectors):
+        if url == URL_2:
+            raise ValueError(
+                "Scraping destination failed DNS validation"
+            )
+        
+        return {
+            "url": url,
+            "title": "Books to Scrape",
+            "description": None,
+            "extracted": {"heading": "Books"}
+        }
+    
+    mock_extract.side_effect = fake_extract
+    
+    # execute the complete celery task locally
+    # database operations still use the isolated test database
+    result = persistent_batch_task(
+        str(job_id),
+        [URL_1, URL_2],
+        {"heading": "h1"}
+    )
+    
+    # one URL succeeds and the other fails
+    assert result["status"] == "partial"
+    assert result["completed"] == 1
+    assert result["failed"] == 1
+    assert result["remaining"] == 0
+    
+    # refresh SQLAlchemy's cached objects
+    persistent_db.expire_all()
+    
+    # verify the final status in PostgreSQL
+    saved_job = persistent_db.get(Job, job_id)
+    assert saved_job.status == "partial"
+    assert saved_job.heartbeat_at is not None
+    
+    # retrieve both saved scraping results
+    pages = persistent_db.scalars(
+        select(ScrapedPage).where(
+            ScrapedPage.job_id == job_id
+        )
+    ).all()
+    
+    assert len(pages) == 2
+    
+    # identify records by URL rather than relying on row order
+    pages_by_url = {page.url: page for page in pages}
+    
+    # the successful URL should retain its extracted data
+    assert pages_by_url[URL_1].status == "completed"
+    assert pages_by_url[URL_1].data["title"] == "Books to Scrape"
+    
+    # the failed URL should record its error
+    assert pages_by_url[URL_2].status == "failed"
+    assert pages_by_url[URL_2].error == "ValueError"
+    assert pages_by_url[URL_2].data is None
+    
+    # both URLs should have reached the mocked extractor
+    assert mock_extract.await_count == 2
+
+@patch(
+    "app.persistent_tasks.extract_with_retry",
+    new_callable=AsyncMock
+)
 def test_completed_job_is_not_reprocessed(
     mock_extract,
     persistent_db

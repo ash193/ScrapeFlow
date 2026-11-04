@@ -5,6 +5,27 @@ import respx
 from app.extractor import extract_page
 from soupsieve.util import SelectorSyntaxError
 
+@pytest.fixture(autouse=True)
+def mock_destination_validation(monkeypatch):
+    """
+    Mock destination validation for all extractor tests.
+    These test focus on HTTP responses and HTML parsing,
+    not security validation, which is tested separately.
+    """
+    
+    # approve example.com only within this test module
+    monkeypatch.setattr(
+        "app.url_validator.ALLOWED_HOSTS",
+        {"example.com"},
+    )
+    
+    # simulate successful DNS validation
+    # this avoids making real DNS requests during testing
+    monkeypatch.setattr(
+        "app.extractor.resolves_to_public_ips",
+        lambda hostname: True,
+    )
+
 # this HTML represents a small webpage
 # using fixed HTML makes our tests predictable
 SAMPLE_HTML = """
@@ -149,4 +170,40 @@ async def test_network_connection_failure():
         await extract_page(
             url="https://example.com/",
             selectors={"heading": "h1"}
-        ) 
+        )
+        
+@pytest.mark.asyncio
+@respx.mock
+async def test_rejects_unsafe_dns_destination(monkeypatch):
+    """
+    Verify that the extractor refuses unsafe DNS results
+    before sending an HTTP request
+    """
+    
+    # override our test fixture's successful DNS response
+    # simulate a hostname resolving to an unsafe address
+    monkeypatch.setattr(
+        "app.extractor.resolves_to_public_ips",
+        lambda hostname: False,
+    )
+    
+    # register a mock HTTP endpoint
+    # it should never receive a request
+    route = respx.get("https://example.com/").mock(
+        return_value=httpx.Response(200, text="<h1>Test</h1>")
+    )
+    
+    # the extractor should reject the destination
+    with pytest.raises(
+        ValueError,
+        match="Scraping destination failed DNS validation"
+    ):
+        await extract_page(
+            url="https://example.com/",
+            selectors={"heading": "h1"}
+        )
+    
+    # confirm no network request was attempted
+    assert route.call_count == 0
+    
+     

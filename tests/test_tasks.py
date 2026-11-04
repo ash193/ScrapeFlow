@@ -116,5 +116,55 @@ def test_batch_task_partial_failure(mock_extract):
     )
     
     assert failed_result["error"] == "ConnectError"
+
+@patch("app.tasks.extract_page", new_callable=AsyncMock)
+def test_batch_continues_after_dns_failure(mock_extract):
+    """
+    A DNS validation failure for one URL should not
+    prevent another URL from being processed
+    """
+    
+    # both URLs are approved by our hostname allowlist
+    urls = [
+        "https://books.toscrape.com/book-one",
+        "https://books.toscrape.com/book-two",
+    ]
+    
+    async def fake_extract(url, selectors):
+        # simulate the extractor rejecting one destination
+        if url == urls[0]:
+            raise ValueError(
+                "Scraping destination failed DNS validation"
+            )
+        
+        # simulate successful extraction of the other URL
+        return {"title": "Example Book"}
+    
+    # replace the real extractor's behavior
+    mock_extract.side_effect = fake_extract
+    
+    # run the celery task synchronously during testing
+    result = extract_batch_task(
+        urls,
+        {"title": "h1"}
+    )
+    
+    # both URLs should be processed
+    assert result["total_urls"] == 2
+    assert result["completed"] == 1
+    assert result["failed"] == 1
+    
+    # confirm the DNS validation failure was recorded
+    assert result["results"][0]["status"] == "failed"
+    assert result["results"][0]["error"] == "ValueError"
+    
+    # confirm the second URL completed successfully
+    assert result["results"][1]["status"] == "completed"
+    
+    # both URLs reached the mocked extractor
+    assert mock_extract.await_count == 2
+    
+    
+    
     
     
