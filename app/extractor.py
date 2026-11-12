@@ -6,6 +6,7 @@ import asyncio
 from urllib.parse import urlsplit
 from app.url_validator import is_allowed_url
 from app.dns_validator import resolves_to_public_ips
+from app.secure_transport import SecureHTTPTransport
 
 async def validate_scraping_destination(url: str) -> None:
     """
@@ -32,6 +33,26 @@ async def validate_scraping_destination(url: str) -> None:
     if not is_public:
         raise ValueError("Scraping destination failed DNS validation")
 
+def create_http_client() -> httpx.AsyncClient:
+    """
+    Create an HTTPX client using our restricted transport.
+    Keeping client creation in one function makes it
+    easier to configure and test network behavior.
+    """
+    return httpx.AsyncClient(
+        # enforce destination restrictions at connection time
+        transport=SecureHTTPTransport(),
+        
+        # keep our existing HTTP request timeout
+        timeout=15,
+        
+        # never automatically follow redirects
+        follow_redirects=False,
+        
+        # ignore environment-configured HTTP proxies
+        trust_env=False,
+    )
+
 async def extract_page(
     url: str,
     selectors: dict[str, str]
@@ -39,13 +60,11 @@ async def extract_page(
     # reject unapproved URLs or unsafe DNS results
     await validate_scraping_destination(url)
     
-    # Create an asynchronous HTTP client
-    # Redirects are disabled so the request cannot silently
-    # follow a redirect to an invalidated destination.
-    async with httpx.AsyncClient(
-        timeout=15,
-        follow_redirects=False
-    ) as client:
+    # create a client that uses our restricted network backend
+    async with create_http_client() as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        
         # Download the page without blocking the event loop 
         # while the network request is in progress
         response = await client.get(url)

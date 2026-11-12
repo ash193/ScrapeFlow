@@ -25,6 +25,18 @@ def mock_destination_validation(monkeypatch):
         "app.extractor.resolves_to_public_ips",
         lambda hostname: True,
     )
+    
+    # use the standard HTTPX transport during extraction tests
+    # this allows respx to intercept requests without opening
+    # real network connections
+    monkeypatch.setattr(
+        "app.extractor.create_http_client",
+        lambda: httpx.AsyncClient(
+            timeout=15,
+            follow_redirects=False,
+            trust_env=False,
+        )
+    )
 
 # this HTML represents a small webpage
 # using fixed HTML makes our tests predictable
